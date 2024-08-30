@@ -3,17 +3,22 @@ use std::io::{self, Write};
 use termion::raw::{IntoRawMode, RawTerminal};
 use termsize::Size;
 
-use crate::{cprintln, utils::SGR};
+use crate::{
+    cprintln,
+    utils::{Uvec2, SGR},
+};
 
 use std::io::{BufWriter, StdoutLock};
 
-use super::GameManager;
+use super::{GameManager, BACKGROUD_COLOR};
 
 pub struct GameGraphics {
     screen: BufWriter<RawTerminal<StdoutLock<'static>>>,
     pub term_size: Size,
     pub tetris_size: Size,
+    pub inner_box_size: Size,
     pub offset: Size,
+    pub scale: u8,
 }
 
 impl GameGraphics {
@@ -55,18 +60,29 @@ impl GameGraphics {
             cols: size.cols / 4,
         };
 
+        let border_x = tetris_size.cols - (tetris_size.cols / 5);
+        let inner_box_size = Size {
+            cols: border_x,
+            rows: tetris_size.rows,
+        };
+
+        let scale = if size.cols < 145 || size.rows < 36 {
+            2
+        } else {
+            3
+        };
+
         Self {
             screen,
             tetris_size,
             offset,
+            inner_box_size,
+            scale,
             term_size: size,
         }
     }
 
     // writing tool
-    pub fn debug(&mut self, msg: &str) -> io::Result<()> {
-        write!(self.screen, "{}", msg)
-    }
     pub fn blank(&mut self) -> io::Result<()> {
         write!(self.screen, " ")
     }
@@ -89,7 +105,7 @@ impl GameGraphics {
     }
 
     // colors
-    pub fn reset_colors(&mut self) -> io::Result<()> {
+    pub fn _reset_colors(&mut self) -> io::Result<()> {
         write!(self.screen, "\x1b[{}m", SGR::Reset)
     }
     pub fn set_colors(&mut self, sgr: &[SGR]) -> io::Result<()> {
@@ -111,9 +127,8 @@ impl GameGraphics {
 
 impl GameManager {
     pub fn draw_tetris_box(&mut self) {
-        const BOX_COLOR: SGR = SGR::YellowBG;
-
         /* Box Drawing */
+        const BOX_COLOR: SGR = SGR::YellowBG;
         let (h, w) = (
             self.graphics.tetris_size.rows as usize,
             self.graphics.tetris_size.cols as usize,
@@ -141,7 +156,7 @@ impl GameManager {
         }
 
         /* Title Drawing */
-        let (rt_ox, rt_oy) = ((self.graphics.term_size.cols / 15) as usize, 1_usize);
+        let (rt_ox, rt_oy) = ((self.graphics.term_size.cols / 15) as usize, 2_usize);
         let (rt_w, rt_h) = (
             (self.graphics.term_size.cols / 12) as usize,
             ((self.graphics.term_size.rows - 2) / 6) as usize,
@@ -245,6 +260,32 @@ impl GameManager {
         }
     }
 
+    // primitives
+    pub fn draw_square(&mut self, x: usize, y: usize, c: SGR) {
+        let gapscale = self.graphics.scale as usize - 1;
+        for i in 0..gapscale {
+            for j in 0..gapscale {
+                self.cells[y + i][x + j] = c;
+            }
+        }
+    }
+
+    // higher level abstraction over squares
+    pub fn draw_tetrominoe(&mut self, c: SGR) {
+        let (oy, ox) = (
+            self.graphics.offset.rows as usize,
+            self.graphics.offset.cols as usize,
+        );
+        for Uvec2 { x, y } in self.tetrominoe.vertices_pos.clone() {
+            self.draw_square(x + ox, y + oy, c);
+        }
+    }
+
+    pub fn clear_tetrominoe(&mut self) {
+        self.draw_tetrominoe(BACKGROUD_COLOR)
+    }
+
+    // paints the screen
     pub fn render(&mut self) -> io::Result<()> {
         for (y, row) in self.cells.iter().enumerate() {
             for (x, c) in row.iter().enumerate() {

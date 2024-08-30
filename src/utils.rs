@@ -66,3 +66,15 @@ impl Display for SGR {
         write!(f, "{}", *self as u8)
     }
 }
+
+#[derive(Clone, Copy)]
+pub struct Uvec2 {
+    pub x: usize,
+    pub y: usize,
+}
+
+impl Uvec2 {
+    pub fn new(x: usize, y: usize) -> Self {
+        Self { x, y }
+    }
+}
