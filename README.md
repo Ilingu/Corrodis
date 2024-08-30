@@ -1,12 +1,10 @@
 # コロディス - Corrodis
 
-#### Yet another tetris cli in rust... But with japanese character?! 🤦‍♂️🇯🇵
+#### Yet another tetris cli in rust...
 
 ## Why? 🤔
 
-Don't know 🤷‍♂️ tetris is cool but japanese characters are cooler 🌬️🥶
-
-And why this project? Don't know either 🤷‍♂️ I've done 0 programming project of this summer, wanted to do something,
+Don't know 🤷‍♂️ I've done 0 programming project of this summer, wanted to do something,
 somebody spoke to me about a todo cli in rust and 1ns later was like "yes it's clear now, the reason of my birth is surely to do yet another tetris cli game in rust" 😩
 
 ## Purpose

@@ -16,7 +16,7 @@ fn main() {
     if is_safe_mode {
         // to detect if a panic occured, if yes recover from it since we must give the control of the terminal back to the user
         println!("Game launching in safe mode...");
-        thread::sleep(Duration::from_secs(1));
+        // thread::sleep(Duration::from_secs(1));
         let game_exiting_result = panic::catch_unwind(|| {
             let mut gm = GameManager::init();
             if let Err(why) = gm.start() {

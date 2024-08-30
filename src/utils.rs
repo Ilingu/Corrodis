@@ -1,16 +1,5 @@
 use std::fmt::Display;
 
-pub struct UVec2 {
-    pub x: usize,
-    pub y: usize,
-}
-
-impl UVec2 {
-    pub fn new(x: usize, y: usize) -> Self {
-        Self { x, y }
-    }
-}
-
 #[macro_export]
 macro_rules! cprintln {
     ($msg:expr, $c:expr) => {
@@ -19,7 +8,7 @@ macro_rules! cprintln {
 }
 
 #[repr(u8)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum SGR {
     Reset = 0,
