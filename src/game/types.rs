@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use nanorand::{Rng, WyRand};
 use termsize::Size;
@@ -9,19 +9,28 @@ pub struct Tetrominoe {
     pub ttype: TetrominoeType,
     pub vertices_pos: Vec<Uvec2>,
     pub still_time: Duration,
+    pub now: Instant,
     pub color: SGR,
+    pub scale: usize,
 }
 
 impl Tetrominoe {
-    pub fn new(inner_box_size: &Size, scale: u8) -> Self {
+    pub fn new(
+        inner_box_size: &Size,
+        scale: usize,
+        ttype: Option<TetrominoeType>,
+        pos: Option<Uvec2>,
+    ) -> Self {
         let mut rng = WyRand::new();
-        let scale = scale as usize;
 
-        let ttype = TetrominoeType::random();
-        let (x, y) = (
-            rng.generate_range(2_usize..(inner_box_size.cols as usize - 1)), // to fix with scale, causes panic
-            1,
-        );
+        let ttype = ttype.unwrap_or(TetrominoeType::random());
+        let (x, y) = match pos {
+            Some(vec) => (vec.x, vec.y),
+            None => (
+                rng.generate_range(2_usize * scale..=(inner_box_size.cols as usize - 2 * scale)),
+                1,
+            ),
+        };
 
         let mut vertices_pos = Vec::with_capacity(4);
         vertices_pos.push(Uvec2::new(x, y));
@@ -76,6 +85,60 @@ impl Tetrominoe {
                 SGR::MagentaBG,
                 SGR::RedBG,
             ][rng.generate_range(0_usize..5)],
+            now: Instant::now(),
+            scale,
+        }
+    }
+
+    pub fn from_self(
+        rhs: &Self,
+        inner_box_size: &Size,
+        scale: Option<usize>,
+        pos: Option<Uvec2>,
+    ) -> Self {
+        let mut s = Self::new(
+            inner_box_size,
+            scale.unwrap_or(rhs.scale),
+            Some(rhs.ttype),
+            pos,
+        );
+        s.still_time = rhs.still_time;
+        s.color = rhs.color;
+        s
+    }
+
+    pub fn rotate(&mut self, ccw: bool, inner_box_size: &Size) {
+        let cp = self.vertices_pos[0];
+
+        let mut rvp = Vec::with_capacity(4);
+        rvp.push(cp);
+
+        for vp in self.vertices_pos.iter().skip(1) {
+            let (ox, oy) = (cp.x as isize - vp.x as isize, cp.y as isize - vp.y as isize);
+            let (rox, roy) = match ccw {
+                true => (oy, -ox),
+                false => (-oy, ox),
+            };
+
+            let (rvpx, rvpy) = (cp.x as isize + rox, cp.y as isize + roy);
+            if rvpx >= 2 * self.scale as isize
+                && rvpx <= inner_box_size.cols as isize - 2 * self.scale as isize
+                && rvpy >= 1
+                && rvpy <= inner_box_size.rows as isize - 2 * self.scale as isize
+            {
+                rvp.push(Uvec2::new(rvpx as usize, rvpy as usize));
+            } else {
+                break;
+            }
+        }
+        if rvp.len() == 4 {
+            self.vertices_pos = rvp; // update only if all vertices can rotate
+        }
+    }
+
+    pub fn fall(&mut self) {
+        for vp in self.vertices_pos.iter_mut() {
+            vp.y += 1
         }
     }
 }
@@ -110,33 +173,6 @@ impl From<u8> for TetrominoeType {
             5 => TetrominoeType::SnakeLeft,
             6 => TetrominoeType::SnakeRight,
             _ => unreachable!(),
-        }
-    }
-}
-
-#[repr(u8)]
-#[derive(Clone, Copy)]
-pub enum Orientation {
-    N,
-    W,
-    E,
-    S,
-}
-impl Orientation {
-    pub fn next_ccw(&self) -> Self {
-        match self {
-            Orientation::N => Orientation::W,
-            Orientation::W => Orientation::S,
-            Orientation::E => Orientation::N,
-            Orientation::S => Orientation::E,
-        }
-    }
-    pub fn next_cw(&self) -> Self {
-        match self {
-            Orientation::N => Orientation::E,
-            Orientation::W => Orientation::N,
-            Orientation::E => Orientation::S,
-            Orientation::S => Orientation::W,
         }
     }
 }

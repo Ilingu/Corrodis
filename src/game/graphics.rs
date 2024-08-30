@@ -15,10 +15,10 @@ use super::{GameManager, BACKGROUD_COLOR};
 pub struct GameGraphics {
     screen: BufWriter<RawTerminal<StdoutLock<'static>>>,
     pub term_size: Size,
-    pub tetris_size: Size,
+    pub box_size: Size,
     pub inner_box_size: Size,
     pub offset: Size,
-    pub scale: u8,
+    pub scale: usize,
 }
 
 impl GameGraphics {
@@ -74,7 +74,7 @@ impl GameGraphics {
 
         Self {
             screen,
-            tetris_size,
+            box_size: tetris_size,
             offset,
             inner_box_size,
             scale,
@@ -83,6 +83,9 @@ impl GameGraphics {
     }
 
     // writing tool
+    pub fn text(&mut self, msg: &str) -> io::Result<()> {
+        write!(self.screen, "{}", msg)
+    }
     pub fn blank(&mut self) -> io::Result<()> {
         write!(self.screen, " ")
     }
@@ -130,8 +133,8 @@ impl GameManager {
         /* Box Drawing */
         const BOX_COLOR: SGR = SGR::YellowBG;
         let (h, w) = (
-            self.graphics.tetris_size.rows as usize,
-            self.graphics.tetris_size.cols as usize,
+            self.graphics.box_size.rows as usize,
+            self.graphics.box_size.cols as usize,
         );
         let (oy, ox) = (
             self.graphics.offset.rows as usize,
@@ -261,11 +264,15 @@ impl GameManager {
     }
 
     // primitives
-    pub fn draw_square(&mut self, x: usize, y: usize, c: SGR) {
-        let gapscale = self.graphics.scale as usize - 1;
-        for i in 0..gapscale {
-            for j in 0..gapscale {
-                self.cells[y + i][x + j] = c;
+    pub fn draw_square(&mut self, scale: usize, x: usize, y: usize, c: SGR) {
+        if scale == 1 {
+            self.cells[y][x] = c;
+        } else {
+            let gapscale = scale - 1;
+            for i in 0..gapscale {
+                for j in 0..gapscale {
+                    self.cells[y + i][x + j] = c;
+                }
             }
         }
     }
@@ -277,12 +284,46 @@ impl GameManager {
             self.graphics.offset.cols as usize,
         );
         for Uvec2 { x, y } in self.tetrominoe.vertices_pos.clone() {
-            self.draw_square(x + ox, y + oy, c);
+            self.draw_square(self.tetrominoe.scale, x + ox, y + oy, c);
         }
     }
 
     pub fn clear_tetrominoe(&mut self) {
         self.draw_tetrominoe(BACKGROUD_COLOR)
+    }
+
+    pub fn draw_nt(&mut self) {
+        let (oy, ox) = (
+            self.graphics.offset.rows as usize,
+            self.graphics.offset.cols as usize,
+        );
+        for i in 0..3 {
+            for Uvec2 { x, y } in self.next_tetrominoes[i].vertices_pos.clone() {
+                self.draw_square(
+                    self.next_tetrominoes[i].scale,
+                    x + ox,
+                    y + oy,
+                    self.next_tetrominoes[i].color,
+                );
+            }
+        }
+    }
+
+    pub fn clear_nt(&mut self) {
+        let (oy, ox) = (
+            self.graphics.offset.rows as usize,
+            self.graphics.offset.cols as usize,
+        );
+        for i in 0..3 {
+            for Uvec2 { x, y } in self.next_tetrominoes[i].vertices_pos.clone() {
+                self.draw_square(
+                    self.next_tetrominoes[i].scale,
+                    x + ox,
+                    y + oy,
+                    BACKGROUD_COLOR,
+                );
+            }
+        }
     }
 
     // paints the screen

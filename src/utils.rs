@@ -1,4 +1,9 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    ops::{Add, Sub},
+};
+
+use termsize::Size;
 
 #[macro_export]
 macro_rules! cprintln {
@@ -76,5 +81,16 @@ pub struct Uvec2 {
 impl Uvec2 {
     pub fn new(x: usize, y: usize) -> Self {
         Self { x, y }
+    }
+}
+
+impl Add for Uvec2 {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
     }
 }

@@ -1,4 +1,5 @@
 use std::{
+    process::Command,
     thread,
     time::{Duration, Instant},
     vec,
@@ -6,11 +7,10 @@ use std::{
 
 use anyhow::Result;
 use graphics::GameGraphics;
-use nanorand::{Rng, WyRand};
 use termion::{event::Key, input::TermRead};
-use types::{Orientation, Tetrominoe, TetrominoeType};
+use types::Tetrominoe;
 
-use crate::utils::SGR;
+use crate::utils::{Uvec2, SGR};
 
 mod graphics;
 mod types;
@@ -23,8 +23,7 @@ pub struct GameManager {
     cells: Vec<Vec<SGR>>,
 
     tetrominoe: Tetrominoe,
-    orientation: Orientation,
-    next_tetrominoes: [TetrominoeType; 3],
+    next_tetrominoes: Vec<Tetrominoe>,
 
     pause: bool,
 }
@@ -37,29 +36,55 @@ impl GameManager {
             graphics.term_size.rows as usize
         ];
 
-        Self {
+        let mut s = Self {
             cells,
-            orientation: Orientation::N,
-            tetrominoe: Tetrominoe::new(&graphics.inner_box_size, graphics.scale),
-            next_tetrominoes: [0, 0, 0].map(|_| TetrominoeType::random()),
+            tetrominoe: Tetrominoe::new(&graphics.inner_box_size, graphics.scale, None, None),
+            next_tetrominoes: vec![],
             graphics,
             pause: false,
-        }
+        };
+
+        s.next_tetrominoes = (0..3)
+            .map(|i| Tetrominoe::new(&s.graphics.inner_box_size, 1, None, Some(s.nt_pos(i))))
+            .collect();
+        s
     }
 
     pub fn pick_next_tetrominoe(&mut self) {
-        self.tetrominoe = {
-            let mut nt = Tetrominoe::new(&self.graphics.inner_box_size, self.graphics.scale);
-            nt.ttype = self.next_tetrominoes[0];
-            nt
-        };
-        self.orientation = Orientation::N;
+        let new_tetrominoe = self.next_tetrominoes.remove(0);
+        self.tetrominoe = Tetrominoe::from_self(
+            &new_tetrominoe,
+            &self.graphics.inner_box_size,
+            Some(self.graphics.scale),
+            None,
+        );
 
-        self.next_tetrominoes[0] = self.next_tetrominoes[1];
-        self.next_tetrominoes[1] = self.next_tetrominoes[2];
-
-        let mut rng = WyRand::new();
-        self.next_tetrominoes[1] = rng.generate_range(0_u8..=6).into();
+        for i in 0..=1 {
+            self.next_tetrominoes[i] = Tetrominoe::from_self(
+                &self.next_tetrominoes[i],
+                &self.graphics.inner_box_size,
+                None,
+                Some(self.nt_pos(i)),
+            )
+        }
+        self.next_tetrominoes.push(Tetrominoe::new(
+            &self.graphics.inner_box_size,
+            1,
+            None,
+            Some(self.nt_pos(2)),
+        ));
+    }
+    /// helper to compute next tetrominoes position according to its rank
+    fn nt_pos(&self, rank: usize) -> Uvec2 {
+        let ix = self.graphics.inner_box_size.cols as usize;
+        let bx = self.graphics.inner_box_size.cols as usize;
+        let x = ix + bx / 9;
+        match rank {
+            0 => Uvec2::new(x, 1),
+            1 => Uvec2::new(x, 6),
+            2 => Uvec2::new(x, 11),
+            _ => unreachable!(),
+        }
     }
 
     pub fn start(&mut self) -> Result<()> {
@@ -84,10 +109,13 @@ impl GameManager {
             if let Some(Ok(key)) = input {
                 match key {
                     Key::Esc | Key::Char('q') => break,
-                    Key::Char('w') => self.orientation = self.orientation.next_cw(),
-                    Key::Char('e') => self.orientation = self.orientation.next_ccw(),
-                    Key::AltDown | Key::Char('s') => {
-                        // speed up block
+                    Key::Char('w') => {
+                        self.clear_tetrominoe();
+                        self.tetrominoe.rotate(true, &self.graphics.inner_box_size)
+                    }
+                    Key::Char('e') => {
+                        self.clear_tetrominoe();
+                        self.tetrominoe.rotate(false, &self.graphics.inner_box_size)
                     }
                     Key::Char(' ') => {
                         // drop block
@@ -117,7 +145,7 @@ impl GameManager {
             self.render()?;
             self.graphics.apply()?;
 
-            // TODO: add optinal text to screen (score, time, title) --> this should be after self.render()
+            // add optinal text to screen (score, time, title) --> this should be after self.render()
 
             let elapsed = now.elapsed();
             if elapsed < Duration::from_millis(1000 / FPS as u64) {
@@ -129,12 +157,19 @@ impl GameManager {
         self.graphics.clear_history()?;
         self.graphics.show_cursor()?;
         self.graphics.apply()?;
+        Command::new("clear").spawn()?;
         Ok(())
     }
 
     pub fn compute_next_frame(&mut self) {
         self.clear_tetrominoe();
+        self.clear_nt();
+        if self.tetrominoe.now.elapsed() >= self.tetrominoe.still_time {
+            // self.tetrominoe.fall();
+            self.tetrominoe.now = Instant::now();
+        }
         self.pick_next_tetrominoe();
         self.draw_tetrominoe(self.tetrominoe.color);
+        self.draw_nt();
     }
 }
