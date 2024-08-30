@@ -1,0 +1,71 @@
+use std::io::{self, Write};
+
+use termsize::Size;
+
+use crate::{
+    cprintln,
+    utils::{UVec2, SGR},
+};
+
+use std::io::{BufWriter, StdoutLock};
+
+pub struct GameGraphics {
+    screen: BufWriter<StdoutLock<'static>>,
+    size: Size,
+}
+
+impl GameGraphics {
+    pub fn init() -> Self {
+        let stdout = io::stdout().lock();
+        let screen = io::BufWriter::new(stdout);
+
+        let size = match termsize::get() {
+            Some(s) => s,
+            None => {
+                cprintln!(
+                    "Couldn't get terminal dimension. Please use a modern terminal",
+                    SGR::RedFG
+                );
+                std::process::exit(1);
+            }
+        };
+
+        Self { screen, size }
+    }
+
+    // basic shapes - abstraction of cursor/colors calls
+
+    // cursor
+    pub fn hide_cursor(&mut self) -> io::Result<()> {
+        write!(self.screen, "\x1b[?25l")
+    }
+    pub fn show_cursor(&mut self) -> io::Result<()> {
+        write!(self.screen, "\x1b[?25h")
+    }
+    pub fn clear(&mut self) -> io::Result<()> {
+        write!(self.screen, "\x1b[2J")
+    }
+    pub fn move_cursor(&mut self, pos: UVec2) -> io::Result<()> {
+        write!(self.screen, "\x1b[{};{}H", pos.x, pos.y)
+    }
+
+    // colors
+    pub fn reset_colors(&mut self) -> io::Result<()> {
+        write!(self.screen, "\x1b[{}m", SGR::Reset)
+    }
+    pub fn set_colors(&mut self, sgr: &[SGR]) -> io::Result<()> {
+        write!(
+            self.screen,
+            "\x1b[{}m",
+            sgr.iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<_>>()
+                .join(";")
+        )
+    }
+
+    /// apply update
+    pub fn apply(&mut self) -> io::Result<()> {
+        self.screen.flush()
+    }
+}
