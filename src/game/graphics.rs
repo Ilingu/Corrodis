@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 
+use termion::raw::{IntoRawMode, RawTerminal};
 use termsize::Size;
 
 use crate::{
@@ -10,13 +11,22 @@ use crate::{
 use std::io::{BufWriter, StdoutLock};
 
 pub struct GameGraphics {
-    screen: BufWriter<StdoutLock<'static>>,
-    size: Size,
+    screen: BufWriter<RawTerminal<StdoutLock<'static>>>,
+    pub size: Size,
 }
 
 impl GameGraphics {
     pub fn init() -> Self {
-        let stdout = io::stdout().lock();
+        let stdout = match io::stdout().lock().into_raw_mode() {
+            Ok(stdout) => stdout,
+            Err(_) => {
+                cprintln!(
+                    "Couldn't get terminal into raw mode. Please use a modern terminal",
+                    SGR::RedFG
+                );
+                std::process::exit(1);
+            }
+        };
         let screen = io::BufWriter::new(stdout);
 
         let size = match termsize::get() {
@@ -28,12 +38,17 @@ impl GameGraphics {
                 );
                 std::process::exit(1);
             }
-        };
+        }; // Size { rows: 45, cols: 190 }
 
         Self { screen, size }
     }
 
     // basic shapes - abstraction of cursor/colors calls
+
+    // debug
+    pub fn debug(&mut self, msg: &str) -> io::Result<()> {
+        write!(self.screen, "{}", msg)
+    }
 
     // cursor
     pub fn hide_cursor(&mut self) -> io::Result<()> {
@@ -44,6 +59,9 @@ impl GameGraphics {
     }
     pub fn clear(&mut self) -> io::Result<()> {
         write!(self.screen, "\x1b[2J")
+    }
+    pub fn clear_history(&mut self) -> io::Result<()> {
+        write!(self.screen, "\x1b[3J")
     }
     pub fn move_cursor(&mut self, pos: UVec2) -> io::Result<()> {
         write!(self.screen, "\x1b[{};{}H", pos.x, pos.y)
