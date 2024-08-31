@@ -1,11 +1,12 @@
 use std::{
+    collections::HashMap,
     process::Command,
     thread,
     time::{Duration, Instant},
     vec,
 };
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use graphics::GameGraphics;
 use termion::{event::Key, input::TermRead};
 use types::Tetrominoe;
@@ -15,12 +16,13 @@ use crate::utils::{Uvec2, SGR};
 mod graphics;
 mod types;
 
-const FPS: usize = 1;
+const FPS: usize = 30;
 const BACKGROUD_COLOR: SGR = SGR::BlackBG;
 
 pub struct GameManager {
     graphics: GameGraphics,
     cells: Vec<Vec<SGR>>,
+    cols_borders: Vec<usize>,
 
     tetrominoe: Tetrominoe,
     next_tetrominoes: Vec<Tetrominoe>,
@@ -40,8 +42,12 @@ impl GameManager {
             cells,
             tetrominoe: Tetrominoe::new(&graphics.inner_box_size, graphics.scale, None, None),
             next_tetrominoes: vec![],
-            graphics,
             pause: false,
+            cols_borders: vec![
+                graphics.box_size.rows as usize - 1;
+                graphics.inner_box_size.cols as usize
+            ],
+            graphics,
         };
 
         s.next_tetrominoes = (0..3)
@@ -52,20 +58,11 @@ impl GameManager {
 
     pub fn pick_next_tetrominoe(&mut self) {
         let new_tetrominoe = self.next_tetrominoes.remove(0);
-        self.tetrominoe = Tetrominoe::from_self(
-            &new_tetrominoe,
-            &self.graphics.inner_box_size,
-            Some(self.graphics.scale),
-            None,
-        );
+        self.tetrominoe = Tetrominoe::from_self(&new_tetrominoe, Some(self.graphics.scale), None);
 
         for i in 0..=1 {
-            self.next_tetrominoes[i] = Tetrominoe::from_self(
-                &self.next_tetrominoes[i],
-                &self.graphics.inner_box_size,
-                None,
-                Some(self.nt_pos(i)),
-            )
+            self.next_tetrominoes[i] =
+                Tetrominoe::from_self(&self.next_tetrominoes[i], None, Some(self.nt_pos(i)))
         }
         self.next_tetrominoes.push(Tetrominoe::new(
             &self.graphics.inner_box_size,
@@ -109,43 +106,37 @@ impl GameManager {
             if let Some(Ok(key)) = input {
                 match key {
                     Key::Esc | Key::Char('q') => break,
-                    Key::Char('w') => {
+                    Key::Char('w') if !self.pause => {
                         self.clear_tetrominoe();
-                        self.tetrominoe.rotate(true, &self.graphics.inner_box_size)
+                        self.tetrominoe.rotate(true)
                     }
-                    Key::Char('e') => {
+                    Key::Char('e') if !self.pause => {
                         self.clear_tetrominoe();
-                        self.tetrominoe.rotate(false, &self.graphics.inner_box_size)
+                        self.tetrominoe.rotate(false)
                     }
-                    Key::Char(' ') => {
-                        // drop block
+                    Key::Left | Key::Char('a') if !self.pause => {
+                        self.clear_tetrominoe();
+                        self.tetrominoe.translate_left()
                     }
-                    Key::AltLeft | Key::Char('a') => {
-                        // move block left
+                    Key::Right | Key::Char('d') if !self.pause => {
+                        self.clear_tetrominoe();
+                        self.tetrominoe.translate_right()
                     }
-                    Key::AltRight | Key::Char('d') => {
-                        // move block right
-                    }
-                    Key::Char('p') => {
-                        // pause/resume game
-                        self.pause = !self.pause;
-                    }
-                    Key::Char('n') => {
-                        // new game
-                    }
+                    Key::Char('p') => self.pause = !self.pause,
                     _ => {}
                 }
             }
 
-            if self.pause {
-                continue;
+            if !self.pause {
+                let is_game_over = self.compute_next_frame();
+                if is_game_over {
+                    break;
+                }
+
+                self.render()?;
+                self.graphics.apply()?;
+                // add optinal text to screen (score, time, title) --> this should be after self.render()
             }
-
-            self.compute_next_frame();
-            self.render()?;
-            self.graphics.apply()?;
-
-            // add optinal text to screen (score, time, title) --> this should be after self.render()
 
             let elapsed = now.elapsed();
             if elapsed < Duration::from_millis(1000 / FPS as u64) {
@@ -161,15 +152,74 @@ impl GameManager {
         Ok(())
     }
 
-    pub fn compute_next_frame(&mut self) {
-        self.clear_tetrominoe();
-        self.clear_nt();
-        if self.tetrominoe.now.elapsed() >= self.tetrominoe.still_time {
-            // self.tetrominoe.fall();
-            self.tetrominoe.now = Instant::now();
+    pub fn is_collision(&self) -> bool {
+        for vp in &self.tetrominoe.vertices_pos {
+            let gapscale = self.graphics.scale - 1;
+            let ny = vp.y + gapscale;
+            if ny >= self.cols_borders[vp.x] {
+                return true;
+            }
         }
-        self.pick_next_tetrominoe();
-        self.draw_tetrominoe(self.tetrominoe.color);
-        self.draw_nt();
+        false
+    }
+
+    pub fn log_new_border(&mut self) -> Result<()> {
+        let mut group_cols: HashMap<usize, Vec<usize>> = HashMap::new();
+        for vp in &self.tetrominoe.vertices_pos {
+            group_cols
+                .entry(vp.x)
+                .and_modify(|rows| rows.push(vp.y))
+                .or_insert(vec![vp.y]);
+        }
+        for (col, rows) in group_cols {
+            let highest_y = *rows.iter().min().ok_or(anyhow!(""))?;
+
+            let gapscale = self.graphics.scale - 1;
+            for j in 0..gapscale {
+                if self.cols_borders[col + j] > highest_y {
+                    self.cols_borders[col + j] = highest_y;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn check_row_clear(&mut self) {
+        for row in self.cells.iter_mut() {
+            if row.iter().all(|c| c != &BACKGROUD_COLOR) {
+                for c in row {
+                    *c = BACKGROUD_COLOR
+                }
+            }
+        }
+    }
+
+    /// return true if game over
+    pub fn compute_next_frame(&mut self) -> bool {
+        if self.tetrominoe.now.elapsed() >= self.tetrominoe.still_time {
+            self.clear_tetrominoe();
+            self.clear_nt();
+            match self.is_collision() {
+                true => {
+                    if self.tetrominoe.vertices_pos.iter().any(|vec| vec.y == 1) {
+                        return true; // Game over
+                    }
+
+                    if self.log_new_border().is_ok() {
+                        self.draw_tetrominoe(self.tetrominoe.color); // persistent image
+                        self.check_row_clear();
+                    }
+                    self.pick_next_tetrominoe();
+                }
+                false => {
+                    self.tetrominoe.fall();
+                    self.tetrominoe.now = Instant::now();
+                }
+            }
+            self.draw_tetrominoe(self.tetrominoe.color);
+            self.draw_nt();
+        }
+        false
     }
 }

@@ -12,6 +12,7 @@ pub struct Tetrominoe {
     pub now: Instant,
     pub color: SGR,
     pub scale: usize,
+    inner_box_size: Size,
 }
 
 impl Tetrominoe {
@@ -26,10 +27,17 @@ impl Tetrominoe {
         let ttype = ttype.unwrap_or(TetrominoeType::random());
         let (x, y) = match pos {
             Some(vec) => (vec.x, vec.y),
-            None => (
-                rng.generate_range(2_usize * scale..=(inner_box_size.cols as usize - 2 * scale)),
-                1,
-            ),
+            None => {
+                let (mut x, y) = (
+                    rng.generate_range(
+                        2_usize * scale..=(inner_box_size.cols as usize - 2 * scale),
+                    ),
+                    1,
+                );
+                x -= x % scale;
+
+                (x, y)
+            }
         };
 
         let mut vertices_pos = Vec::with_capacity(4);
@@ -77,7 +85,7 @@ impl Tetrominoe {
         Self {
             ttype,
             vertices_pos,
-            still_time: Duration::from_millis(250), // should vary according to score
+            still_time: Duration::from_millis(50), // should vary according to score
             color: [
                 SGR::BlueBG,
                 SGR::CyanBG,
@@ -87,17 +95,16 @@ impl Tetrominoe {
             ][rng.generate_range(0_usize..5)],
             now: Instant::now(),
             scale,
+            inner_box_size: Size {
+                rows: inner_box_size.rows,
+                cols: inner_box_size.cols,
+            },
         }
     }
 
-    pub fn from_self(
-        rhs: &Self,
-        inner_box_size: &Size,
-        scale: Option<usize>,
-        pos: Option<Uvec2>,
-    ) -> Self {
+    pub fn from_self(rhs: &Self, scale: Option<usize>, pos: Option<Uvec2>) -> Self {
         let mut s = Self::new(
-            inner_box_size,
+            &rhs.inner_box_size,
             scale.unwrap_or(rhs.scale),
             Some(rhs.ttype),
             pos,
@@ -107,7 +114,7 @@ impl Tetrominoe {
         s
     }
 
-    pub fn rotate(&mut self, ccw: bool, inner_box_size: &Size) {
+    pub fn rotate(&mut self, ccw: bool) {
         let cp = self.vertices_pos[0];
 
         let mut rvp = Vec::with_capacity(4);
@@ -122,9 +129,9 @@ impl Tetrominoe {
 
             let (rvpx, rvpy) = (cp.x as isize + rox, cp.y as isize + roy);
             if rvpx >= 2 * self.scale as isize
-                && rvpx <= inner_box_size.cols as isize - 2 * self.scale as isize
+                && rvpx <= self.inner_box_size.cols as isize - 2 * self.scale as isize
                 && rvpy >= 1
-                && rvpy <= inner_box_size.rows as isize - 2 * self.scale as isize
+                && rvpy <= self.inner_box_size.rows as isize - 2 * self.scale as isize
             {
                 rvp.push(Uvec2::new(rvpx as usize, rvpy as usize));
             } else {
@@ -139,6 +146,27 @@ impl Tetrominoe {
     pub fn fall(&mut self) {
         for vp in self.vertices_pos.iter_mut() {
             vp.y += 1
+        }
+    }
+
+    pub fn translate_right(&mut self) {
+        for vp in &self.vertices_pos {
+            if vp.x + self.scale > self.inner_box_size.cols as usize - self.scale {
+                return;
+            }
+        }
+        for vp in self.vertices_pos.iter_mut() {
+            vp.x += self.scale
+        }
+    }
+    pub fn translate_left(&mut self) {
+        for vp in &self.vertices_pos {
+            if vp.x + self.scale < 2_usize * self.scale {
+                return;
+            }
+        }
+        for vp in self.vertices_pos.iter_mut() {
+            vp.x -= self.scale
         }
     }
 }

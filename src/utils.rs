@@ -13,7 +13,7 @@ macro_rules! cprintln {
 }
 
 #[repr(u8)]
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum SGR {
     Reset = 0,
@@ -72,7 +72,7 @@ impl Display for SGR {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Uvec2 {
     pub x: usize,
     pub y: usize,
