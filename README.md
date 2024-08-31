@@ -1,5 +1,7 @@
 # コロディス - Corrodis
 
+<img src="./demo.png" width="500px" />
+
 #### Yet another tetris cli in rust...
 
 ## Why? 🤔
